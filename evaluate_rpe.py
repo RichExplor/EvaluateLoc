@@ -159,6 +159,17 @@ def scale(a,scalar):
          [a[3,0], a[3,1], a[3,2], a[3,3]]]
                        )
 
+def compute_euler_angle(transform):
+    """
+    Compute the euler angle from a 4x4 homogeneous matrix.(x-y-z)
+    """
+    R = transform[0:3,0:3]
+    roll = numpy.arctan2(R[2, 1], R[2, 2])
+    pitch = numpy.arctan2(-R[2, 0], numpy.sqrt(R[0, 0]**2 + R[1, 0]**2))
+    yaw = numpy.arctan2(R[1, 0], R[0, 0])
+
+    return roll, pitch, yaw
+
 def compute_distance(transform):
     """
     Compute the distance of the translational component of a 4x4 homogeneous matrix.
@@ -288,8 +299,9 @@ def evaluate_trajectory(traj_gt,traj_est,param_max_pairs=10000,param_fixed_delta
         
         trans = compute_distance(error44)
         rot = compute_angle(error44)
+        roll, pitch, yaw = compute_euler_angle(error44)
         
-        result.append([stamp_est_0,stamp_est_1,stamp_gt_0,stamp_gt_1,trans,rot])
+        result.append([stamp_est_0,stamp_est_1,stamp_gt_0,stamp_gt_1,trans,rot, roll, pitch, yaw])
         
     if len(result)<2:
         raise Exception("Couldn't find matching timestamp pairs between groundtruth and estimated trajectory!")
@@ -313,14 +325,14 @@ if __name__ == '__main__':
     parser.add_argument('groundtruth_file', help='ground-truth trajectory file (format: "timestamp tx ty tz qx qy qz qw")')
     parser.add_argument('estimated_file', help='estimated trajectory file (format: "timestamp tx ty tz qx qy qz qw")')
     parser.add_argument('--max_pairs', help='maximum number of pose comparisons (default: 10000, set to zero to disable downsampling)', default=10000)
-    parser.add_argument('--fixed_delta', help='only consider pose pairs that have a distance of delta delta_unit (e.g., for evaluating the drift per second/meter/radian)', action='store_true')
+    parser.add_argument('--fixed_delta', help='only consider pose pairs that have a distance of delta delta_unit (e.g., for evaluating the drift per second/meter/radian)', action='store_false')
     parser.add_argument('--delta', help='delta for evaluation (default: 1.0)',default=1.0)
     parser.add_argument('--delta_unit', help='unit of delta (options: \'s\' for seconds, \'m\' for meters, \'rad\' for radians, \'f\' for frames; default: \'s\')',default='s')
     parser.add_argument('--offset', help='time offset between ground-truth and estimated trajectory (default: 0.0)',default=0.0)
     parser.add_argument('--scale', help='scaling factor for the estimated trajectory (default: 1.0)',default=1.0)
     parser.add_argument('--save', help='text file to which the evaluation will be saved (format: stamp_est0 stamp_est1 stamp_gt0 stamp_gt1 trans_error rot_error)')
     parser.add_argument('--plot', help='plot the result to a file (requires --fixed_delta, output format: png)')
-    parser.add_argument('--verbose', help='print all evaluation data (otherwise, only the mean translational error measured in meters will be printed)', action='store_true')
+    parser.add_argument('--verbose', help='print all evaluation data (otherwise, only the mean translational error measured in meters will be printed)', action='store_false')
     args = parser.parse_args()
     
     if args.plot and not args.fixed_delta:
@@ -340,7 +352,10 @@ if __name__ == '__main__':
     stamps = numpy.array(result)[:,0]
     trans_error = numpy.array(result)[:,4]
     rot_error = numpy.array(result)[:,5]
-    
+    roll_error = numpy.array(result)[:,6]
+    pitch_error = numpy.array(result)[:,7]
+    yaw_error = numpy.array(result)[:,8]
+
     if args.save:
         f = open(args.save,"w")
         f.write("\n".join([" ".join(["%f"%v for v in line]) for line in result]))
@@ -349,6 +364,7 @@ if __name__ == '__main__':
     if args.verbose:
         print("compared_pose_pairs %d pairs"%(len(trans_error)))
 
+        print("\ntranslational_error -----------------------------/m")
         print("translational_error.rmse %f m"%numpy.sqrt(numpy.dot(trans_error,trans_error) / len(trans_error)))
         print("translational_error.mean %f m"%numpy.mean(trans_error))
         print("translational_error.median %f m"%numpy.median(trans_error))
@@ -356,6 +372,10 @@ if __name__ == '__main__':
         print("translational_error.min %f m"%numpy.min(trans_error))
         print("translational_error.max %f m"%numpy.max(trans_error))
 
+        print("\nrotational_error -------------------------------deg")
+        print("roll_error.rmse %f deg"%(numpy.sqrt(numpy.dot(roll_error,roll_error) / len(roll_error)) * 180.0 / numpy.pi))
+        print("pitch_error.rmse %f deg"%(numpy.sqrt(numpy.dot(pitch_error,pitch_error) / len(pitch_error)) * 180.0 / numpy.pi))
+        print("yaw_error.rmse %f deg"%(numpy.sqrt(numpy.dot(yaw_error,yaw_error) / len(yaw_error)) * 180.0 / numpy.pi))
         print("rotational_error.rmse %f deg"%(numpy.sqrt(numpy.dot(rot_error,rot_error) / len(rot_error)) * 180.0 / numpy.pi))
         print("rotational_error.mean %f deg"%(numpy.mean(rot_error) * 180.0 / numpy.pi))
         print("rotational_error.median %f deg"%(numpy.median(rot_error) * 180.0 / numpy.pi))
